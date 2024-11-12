@@ -6,6 +6,7 @@ const {
   StringSelectMenuBuilder,
   EmbedBuilder,
   AttachmentBuilder,
+  Options,
 } = require("discord.js");
 const axios = require("axios");
 const fs = require("fs");
@@ -91,75 +92,90 @@ client.on("messageCreate", async (message) => {
       const row = new ActionRowBuilder().addComponents(selectMenu);
 
       // Envía el embed con el menú desplegable
-      message.channel.send({ embeds: [embed], components: [row] });
-    } catch (error) {
-      console.error("Error al buscar las cartas:", error);
-      message.channel.send("Hubo un error al buscar las cartas.");
-    }
-  }
-});
+      const sentMessage = await message.channel.send({
+        embeds: [embed],
+        components: [row],
+      });
 
-// Maneja la interacción del menú desplegable
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isStringSelectMenu()) return;
+      // Espera la interacción del usuario con un límite de tiempo
+      const filter = (interaction) =>
+        interaction.customId === "select-rarity" &&
+        interaction.user.id === message.author.id;
+      const collector = sentMessage.createMessageComponentCollector({
+        filter,
+        time: 60000,
+      }); // 60 segundos
 
-  if (interaction.customId === "select-rarity") {
-    const selectedRarity = interaction.values[0].toLowerCase().trim();
-    const content = interaction.message.embeds[0].title
-      .split(": ")[1]
-      .toLowerCase()
-      .trim();
+      collector.on("collect", async (interaction) => {
+        const selectedRarity = interaction.values[0].toLowerCase().trim();
+        const content = interaction.message.embeds[0].title
+          .split(": ")[1]
+          .toLowerCase()
+          .trim();
 
-    console.log(
-      `Buscando carta con nombre: "${content}" y rareza: "${selectedRarity}"`
-    );
+        console.log(
+          `Buscando carta con nombre: "${content}" y rareza: "${selectedRarity}"`
+        );
 
-    try {
-      // Realiza la solicitud HTTP para obtener el JSON desde la URL
-      const response = await axios.get(
-        "https://raw.githubusercontent.com/iSMP14/pokemon-tcg-pocket-cardss/refs/heads/main/v1.json"
-      );
-      const cartas = response.data;
+        try {
+          // Realiza la solicitud HTTP para obtener el JSON desde la URL
+          const response = await axios.get(
+            "https://raw.githubusercontent.com/iSMP14/pokemon-tcg-pocket-cardss/refs/heads/main/v1.json"
+          );
+          const cartas = response.data;
 
-      // Filtra la carta específica por nombre y rareza de manera más flexible
-      const cartaSeleccionada = cartas.find(
-        (carta) =>
-          carta.name.toLowerCase().includes(content) &&
-          carta.rarity.toLowerCase().trim() === selectedRarity
-      );
+          // Filtra la carta específica por nombre y rareza de manera más flexible
+          const cartaSeleccionada = cartas.find(
+            (carta) =>
+              carta.name.toLowerCase().includes(content) &&
+              carta.rarity.toLowerCase().trim() === selectedRarity
+          );
 
-      console.log("Carta seleccionada:", cartaSeleccionada); // Debug
+          console.log("Carta seleccionada:", cartaSeleccionada); // Debug
 
-      if (cartaSeleccionada) {
-        const embed = new EmbedBuilder()
-          .setTitle(`Carta: ${cartaSeleccionada.name}`)
-          .setDescription(
-            `
+          if (cartaSeleccionada) {
+            const embed = new EmbedBuilder()
+              .setTitle(`Carta: ${cartaSeleccionada.name}`)
+              .setDescription(
+                `
 **Rareza**: ${cartaSeleccionada.rarity}
 **Paquete**: ${cartaSeleccionada.pack}
 **Tipo**: ${cartaSeleccionada.type}
 **Salud**: ${cartaSeleccionada.health}
 **Etapa**: ${cartaSeleccionada.stage}
 **Costo de creación**: ${cartaSeleccionada.craftingCost}`
-          )
-          .setImage(cartaSeleccionada.image);
+              )
+              .setImage(cartaSeleccionada.image);
 
-        await interaction.update({ embeds: [embed] });
-      } else {
-        console.log(
-          `No se encontró la carta con nombre: "${content}" y rareza: "${selectedRarity}"`
-        );
-        await interaction.reply({
-          content: "No se encontró la carta seleccionada.",
-          ephemeral: true,
-        });
-      }
-    } catch (error) {
-      console.error("Error al manejar la interacción:", error);
-      await interaction.reply({
-        content: "Hubo un error al buscar la carta seleccionada.",
-        ephemeral: true,
+            await interaction.update({ embeds: [embed] });
+          } else {
+            console.log(
+              `No se encontró la carta con nombre: "${content}" y rareza: "${selectedRarity}"`
+            );
+            await interaction.reply({
+              content: "No se encontró la carta seleccionada.",
+              ephemeral: true,
+            });
+          }
+        } catch (error) {
+          console.error("Error al manejar la interacción:", error);
+          await interaction.reply({
+            content: "Hubo un error al buscar la carta seleccionada.",
+            ephemeral: true,
+          });
+        }
       });
+
+      collector.on("end", (collected) => {
+        if (collected.size === 0) {
+          message.channel.send(
+            "El tiempo para seleccionar una rareza ha expirado."
+          );
+        }
+      });
+    } catch (error) {
+      console.error("Error al buscar las cartas:", error);
+      message.channel.send("Hubo un error al buscar las cartas.");
     }
   }
 });
